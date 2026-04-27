@@ -1,0 +1,6 @@
+drug_name,standard_concentration,concentration_unit,dosing_unit,min_dose,max_dose
+Dopamine,1600,mcg/mL,mcg/kg/min,2.0,20.0
+Insulin (Regular),1,unit/mL,units/hr,0.01,0.5
+Heparin,100,units/mL,units/kg/hr,12.0,18.0
+Norepinephrine,16,mcg/mL,mcg/kg/min,0.01,0.5
+Fentanyl,10,mcg/mL,mcg/hr,25.0,100.0
