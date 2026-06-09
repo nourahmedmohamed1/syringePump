@@ -38,33 +38,35 @@ Built with both the **healthcare professional** and the **pediatric patient** in
 </p>
 
 ---
+
 ## ✨ Key Features
 
 ### 🩺 Clinical Mode
-A strict, reliable, and precise dashboard designed for medical personnel:
+> **A strict, reliable, and precise dashboard designed for medical personnel:**
 
-*   **⚡ Bluetooth Comm. Engine**: High-frequency real-time telemetry from the syringe hardware using `flutter_bluetooth_serial`.
-*   **📊 Live Telemetry & Monitoring**: Immediate, zero-latency visualization of:
-    *   Infusion progress & volume delivered.
-    *   Pressure occlusion (FSR sensor data) monitoring bounds.
-    *   Dynamic flow rate and sensor charts.
-*   **❤️ Camera-Based Heart Rate (PPG)**: An innovative built-in photoplethysmography (PPG) engine that uses the front-facing camera to reliably calculate the patient's heart rate—no external sensors required.
-*   **🗄️ Built-in Drug Library**: Persistent repository powered by SQLite for selecting medications and calculating proper safety thresholds.
-*   **🔔 Intelligent Alarm System**: Configurable safety thresholds with immediate visual alerts and notifications for line occlusions or syringe completion.
-*   **📜 Session History**: Automatically logs all treatments to the local SQLite database for retroactive auditing.
-
-### 🎈 Kids Mode
-A dedicated, magical interface designed specifically to reduce treatment anxiety, guided by **Ellie the Elephant**:
-
-*   **🗣️ Verbal Companion**: Ellie features auto-speech to encourage the child and guide them through calming breathing exercises.
-*   **🎤 "Talk to Ellie"**: Advanced voice-recognition and Pitch-shifted Text-to-Speech allows kids to talk to Ellie, who repeats what they say in a cheerful, high-pitched voice!
-*   **🎮 "Catch the Drops" Mini-Game**: 
-    *   An immersive interactive game where kids tap to catch falling medicine drops (💧💊🩹).
-    *   Features spark particle effects, live score tracking, and immersive celebratory logic.
-    *   Takes the focus off the IV line and puts it on a fun, rewarding challenge.
+* **⚡ Bluetooth Comm. Engine**: High-frequency real-time telemetry from the syringe hardware using `flutter_bluetooth_serial`.
+* **📊 Live Telemetry & Monitoring**: Immediate, zero-latency visualization of:
+  * 🔄 Infusion progress & volume delivered.
+  * ⚠️ Pressure occlusion (FSR sensor data) monitoring bounds.
+  * 📈 Dynamic flow rate and sensor charts.
+* **❤️ Camera-Based Heart Rate (PPG)**: An innovative built-in photoplethysmography (PPG) engine that uses the front-facing camera to reliably calculate the patient's heart rate—no external sensors required.
+* **🗄️ Built-in Drug Library**: Persistent repository powered by SQLite for selecting medications and calculating proper safety thresholds.
+* **🔔 Intelligent Alarm System**: Configurable safety thresholds with immediate visual alerts and notifications for line occlusions or syringe completion.
+* **📜 Session History**: Automatically logs all treatments to the local SQLite database for retroactive auditing.
 
 ---
 
+### 🎈 Kids Mode
+> **A dedicated, magical interface designed specifically to reduce treatment anxiety, guided by Ellie the Elephant:**
+
+* **🗣️ Verbal Companion**: Ellie features auto-speech to encourage the child and guide them through calming breathing exercises.
+* **🎤 "Talk to Ellie"**: Advanced voice-recognition and Pitch-shifted Text-to-Speech allows kids to talk to Ellie, who repeats what they say in a cheerful, high-pitched voice!
+* **🎮 "Catch the Drops" Mini-Game**: 
+  * 💧 Immersive interactive game where kids tap to catch falling medicine drops (💧💊🩹).
+  * ✨ Features spark particle effects, live score tracking, and immersive celebratory logic.
+  * 🎯 Takes the focus off the IV line and puts it on a fun, rewarding challenge.
+
+---
 ## 📸 Screenshots
 
 | Clinical Dashboard | Camera HR Scanner (PPG) | Kids Interaction Mode | Memory Game |
