@@ -158,7 +158,7 @@ lib/
 ---
 ## 📧 Contact
 **Project Contributer**: Habiba Ahmed
-- Email: 
+
 - [GitHub]()
 - [LinkedIn]()
 
@@ -167,15 +167,14 @@ lib/
 - [LinkedIn](https://linkedin.com/in/nn-anwar)
 
 **Project Contributer**: ......
-- Email: 
 - [GitHub]()
 - [LinkedIn]()
 
 **Project Contributer**:........
 - [GitHub]()
 - [LinkedIn]()
+
 **Project Contributer**: ......
-- Email: 
 - [GitHub]()
 - [LinkedIn]()
 
