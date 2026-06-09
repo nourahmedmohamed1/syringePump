@@ -26,13 +26,9 @@ class ThresholdService {
     }
 
     // --- IR Syringe Empty ---
-    if (data.irBlocked) {
-      alarms.add(AlarmEvent(
-        parameter: AlarmParameter.syringeEmpty,
-        severity: AlarmSeverity.critical,
-        message: '🚨 SYRINGE EMPTY! Plunger reached end position.',
-      ));
-    }
+    // NOTE: The empty alarm is ONLY triggered by the exact Arduino string
+    // "ALARM: EMPTY FLUID!" received via Bluetooth. The app NEVER infers
+    // syringe-empty state from IR sensor calculations.
 
     // --- Heart Rate ---
     if (data.heartRate > 0) {

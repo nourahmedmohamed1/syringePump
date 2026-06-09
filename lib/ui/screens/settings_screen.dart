@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/thresholds.dart';
 import '../../providers/pump_provider.dart';
+import 'hr_scan_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -63,6 +64,86 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 value: provider.soundEnabled,
                 onChanged: (v) => provider.setSoundEnabled(v),
                 isDark: isDark,
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+
+
+          // ── Heart Rate Monitoring (NEW) ──
+          _SectionTitle(title: 'Heart Rate Monitoring', isDark: isDark),
+          const SizedBox(height: 4),
+          Text(
+            'Fingerprint-based heart rate check settings',
+            style: GoogleFonts.outfit(
+              fontSize: 11,
+              color: isDark
+                  ? AppColors.textSecondaryDark
+                  : AppColors.textSecondaryLight,
+            ),
+          ),
+          const SizedBox(height: 8),
+          _SettingsCard(
+            isDark: isDark,
+            children: [
+              // HR Check Interval dropdown
+              _HrIntervalTile(
+                isDark: isDark,
+                currentInterval: provider.hrCheckInterval,
+                onChanged: (duration) {
+                  provider.setHrCheckInterval(duration);
+                },
+              ),
+              Divider(
+                  color:
+                      isDark ? AppColors.dividerDark : AppColors.dividerLight,
+                  height: 1),
+              // Manual scan button
+              ListTile(
+                leading: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: AppColors.heartColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(Icons.fingerprint,
+                      color: AppColors.heartColor, size: 20),
+                ),
+                title: Text(
+                  'Scan Now',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    color: isDark
+                        ? AppColors.textPrimaryDark
+                        : AppColors.textPrimaryLight,
+                  ),
+                ),
+                subtitle: Text(
+                  'Take a manual fingerprint heart rate reading',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    color: isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textSecondaryLight,
+                  ),
+                ),
+                trailing: Icon(Icons.arrow_forward_ios,
+                    size: 14,
+                    color: isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textSecondaryLight),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          const HrScanScreen(isInterruption: false),
+                    ),
+                  );
+                },
               ),
             ],
           ),
@@ -200,6 +281,58 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 color: AppColors.danger,
                 onChanged: (v) {
                   setState(() => Thresholds.hrCriticalMax = v);
+                  Thresholds.saveToPrefs();
+                },
+                isDark: isDark,
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // ── Safe Heart Rate Range (NEW) ──
+          _SectionTitle(title: 'Safe Heart Rate Range', isDark: isDark),
+          const SizedBox(height: 4),
+          Text(
+            'Fingerprint HR readings outside this range trigger an alarm and pause the syringe',
+            style: GoogleFonts.outfit(
+              fontSize: 11,
+              color: isDark
+                  ? AppColors.textSecondaryDark
+                  : AppColors.textSecondaryLight,
+            ),
+          ),
+          const SizedBox(height: 8),
+          _SettingsCard(
+            isDark: isDark,
+            children: [
+              _ThresholdTile(
+                icon: Icons.favorite,
+                title: 'Min Safe BPM',
+                value: Thresholds.safeHrMin,
+                min: 20,
+                max: 100,
+                unit: 'BPM',
+                color: AppColors.safe,
+                onChanged: (v) {
+                  setState(() => Thresholds.safeHrMin = v);
+                  Thresholds.saveToPrefs();
+                },
+                isDark: isDark,
+              ),
+              Divider(
+                  color:
+                      isDark ? AppColors.dividerDark : AppColors.dividerLight,
+                  height: 1),
+              _ThresholdTile(
+                icon: Icons.favorite,
+                title: 'Max Safe BPM',
+                value: Thresholds.safeHrMax,
+                min: 80,
+                max: 200,
+                unit: 'BPM',
+                color: AppColors.safe,
+                onChanged: (v) {
+                  setState(() => Thresholds.safeHrMax = v);
                   Thresholds.saveToPrefs();
                 },
                 isDark: isDark,
@@ -349,6 +482,103 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 }
+
+// ─── HR Interval Dropdown Tile ───────────────────────────────────────────────
+
+class _HrIntervalTile extends StatelessWidget {
+  final bool isDark;
+  final Duration currentInterval;
+  final ValueChanged<Duration> onChanged;
+
+  const _HrIntervalTile({
+    required this.isDark,
+    required this.currentInterval,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: AppColors.heartColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(Icons.timer_outlined,
+                color: AppColors.heartColor, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'HR Check Interval',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    color: isDark
+                        ? AppColors.textPrimaryDark
+                        : AppColors.textPrimaryLight,
+                  ),
+                ),
+                Text(
+                  'How often to scan heart rate',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    color: isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textSecondaryLight,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+            decoration: BoxDecoration(
+              color: AppColors.heartColor.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: AppColors.heartColor.withValues(alpha: 0.2),
+              ),
+            ),
+            child: DropdownButton<Duration>(
+              value: currentInterval,
+              underline: const SizedBox(),
+              isDense: true,
+              dropdownColor: isDark ? AppColors.cardDark : AppColors.cardLight,
+              borderRadius: BorderRadius.circular(12),
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: AppColors.heartColor,
+              ),
+              icon: Icon(Icons.expand_more,
+                  size: 18, color: AppColors.heartColor),
+              items: PumpProvider.hrIntervalOptions.map((duration) {
+                return DropdownMenuItem<Duration>(
+                  value: duration,
+                  child: Text(PumpProvider.formatInterval(duration)),
+                );
+              }).toList(),
+              onChanged: (value) {
+                if (value != null) onChanged(value);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Shared Setting Widgets ──────────────────────────────────────────────────
 
 class _SectionTitle extends StatelessWidget {
   final String title;
@@ -556,3 +786,4 @@ class _ThresholdTileState extends State<_ThresholdTile> {
     );
   }
 }
+

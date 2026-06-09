@@ -1,16 +1,26 @@
 // lib/ui/widgets/heart_rate_wave.dart
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart' hide TextDirection;
 import '../../core/constants/app_colors.dart';
+import '../../core/constants/thresholds.dart';
+import '../../core/models/hr_reading.dart';
 
+/// Intermittent Heart Rate Trend Graph.
+/// Displays discrete data points over time (NOT a continuous ECG line).
 class HeartRateWave extends StatelessWidget {
   final List<double> buffer;
   final double currentHR;
+  final List<HrReading> hrReadings;
+  final bool kidsMode;
 
   const HeartRateWave({
     super.key,
     required this.buffer,
     required this.currentHR,
+    this.hrReadings = const [],
+    this.kidsMode = false,
   });
 
   @override
@@ -57,7 +67,7 @@ class HeartRateWave extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                'HEART RATE',
+                kidsMode ? '💖 HEART HEALTH' : 'HR TREND',
                 style: GoogleFonts.outfit(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
@@ -86,75 +96,266 @@ class HeartRateWave extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 50,
-            child: CustomPaint(
-              size: Size.infinite,
-              painter: _HRWavePainter(
-                buffer: buffer,
-                isDark: isDark,
+          const SizedBox(height: 6),
+          // Reading count & source info
+          if (hrReadings.isNotEmpty)
+            Text(
+              '${hrReadings.length} reading${hrReadings.length == 1 ? '' : 's'} • Camera PPG',
+              style: GoogleFonts.outfit(
+                fontSize: 10,
+                color: isDark
+                    ? AppColors.textSecondaryDark
+                    : AppColors.textSecondaryLight,
               ),
             ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: kidsMode ? 80 : 100,
+            child: hrReadings.isNotEmpty
+                ? CustomPaint(
+                    size: Size.infinite,
+                    painter: _IntermittentTrendPainter(
+                      readings: hrReadings,
+                      isDark: isDark,
+                      kidsMode: kidsMode,
+                    ),
+                  )
+                : Center(
+                    child: Text(
+                      kidsMode
+                          ? '💖 No heart scans yet!'
+                          : 'No HR readings yet — tap Scan to begin',
+                      style: GoogleFonts.outfit(
+                        fontSize: 12,
+                        color: isDark
+                            ? AppColors.textSecondaryDark
+                            : AppColors.textSecondaryLight,
+                      ),
+                    ),
+                  ),
           ),
+          // Time labels for intermittent graph
+          if (hrReadings.length >= 2)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    DateFormat('HH:mm').format(hrReadings.first.timestamp),
+                    style: GoogleFonts.outfit(
+                      fontSize: 9,
+                      color: isDark
+                          ? AppColors.textSecondaryDark
+                          : AppColors.textSecondaryLight,
+                    ),
+                  ),
+                  Text(
+                    DateFormat('HH:mm').format(hrReadings.last.timestamp),
+                    style: GoogleFonts.outfit(
+                      fontSize: 9,
+                      color: isDark
+                          ? AppColors.textSecondaryDark
+                          : AppColors.textSecondaryLight,
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
   }
 }
 
-class _HRWavePainter extends CustomPainter {
-  final List<double> buffer;
-  final bool isDark;
+// ─── Intermittent Trend Painter (Discrete Points) ────────────────────────────
 
-  _HRWavePainter({required this.buffer, required this.isDark});
+class _IntermittentTrendPainter extends CustomPainter {
+  final List<HrReading> readings;
+  final bool isDark;
+  final bool kidsMode;
+
+  _IntermittentTrendPainter({
+    required this.readings,
+    required this.isDark,
+    this.kidsMode = false,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (buffer.isEmpty) return;
+    if (readings.isEmpty) return;
 
-    final validValues = buffer.where((v) => v > 0).toList();
-    if (validValues.isEmpty) return;
+    final padding = 12.0;
+    final graphWidth = size.width - padding * 2;
+    final graphHeight = size.height - padding * 2;
 
-    final maxVal = validValues.reduce((a, b) => a > b ? a : b) * 1.1;
-    final minVal = validValues.reduce((a, b) => a < b ? a : b) * 0.9;
-    final range = maxVal - minVal;
-    if (range <= 0) return;
+    // Calculate Y range
+    final bpmValues = readings.map((r) => r.bpm).toList();
+    final minBpm = (bpmValues.reduce(min) - 10).clamp(30.0, 200.0);
+    final maxBpm = (bpmValues.reduce(max) + 10).clamp(50.0, 250.0);
+    final bpmRange = maxBpm - minBpm;
+    if (bpmRange <= 0) return;
 
-    final paint = Paint()
-      ..color = AppColors.heartColor
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
+    // Calculate X range (time)
+    final minTime = readings.first.timestamp.millisecondsSinceEpoch.toDouble();
+    final maxTime = readings.last.timestamp.millisecondsSinceEpoch.toDouble();
+    final timeRange = maxTime - minTime;
 
-    final path = Path();
-    final step = size.width / (buffer.length - 1).clamp(1, 999);
+    // Draw threshold bands
+    _drawThresholdBands(canvas, size, padding, graphHeight, minBpm, bpmRange);
 
-    bool started = false;
-    for (int i = 0; i < buffer.length; i++) {
-      if (buffer[i] <= 0) continue;
-      final x = i * step;
-      final y = size.height - ((buffer[i] - minVal) / range) * size.height;
-      if (!started) {
-        path.moveTo(x, y);
-        started = true;
-      } else {
-        path.lineTo(x, y);
-      }
+    // Calculate point positions
+    final points = <Offset>[];
+    for (final reading in readings) {
+      final x = timeRange > 0
+          ? padding +
+              ((reading.timestamp.millisecondsSinceEpoch - minTime) /
+                      timeRange) *
+                  graphWidth
+          : size.width / 2;
+      final y = padding + (1 - (reading.bpm - minBpm) / bpmRange) * graphHeight;
+      points.add(Offset(x, y));
     }
 
-    canvas.drawPath(path, paint);
+    if (!kidsMode) {
+      // Medical mode: clean discrete dots with subtle connecting line
+      // Subtle dashed connecting line
+      final linePaint = Paint()
+        ..color = AppColors.heartColor.withValues(alpha: 0.15)
+        ..strokeWidth = 1
+        ..style = PaintingStyle.stroke;
 
-    // Glow effect
-    final glowPaint = Paint()
-      ..color = AppColors.heartColor.withValues(alpha: 0.15)
-      ..strokeWidth = 6
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
-    canvas.drawPath(path, glowPaint);
+      if (points.length >= 2) {
+        final path = Path()..moveTo(points.first.dx, points.first.dy);
+        for (int i = 1; i < points.length; i++) {
+          path.lineTo(points[i].dx, points[i].dy);
+        }
+        canvas.drawPath(path, linePaint);
+      }
+
+      // Draw discrete dots
+      for (int i = 0; i < points.length; i++) {
+        final isLatest = i == points.length - 1;
+        final dotRadius = isLatest ? 6.0 : 4.0;
+
+        // Glow for each dot
+        final glowPaint = Paint()
+          ..color = AppColors.heartColor
+              .withValues(alpha: isLatest ? 0.25 : 0.12)
+          ..maskFilter =
+              MaskFilter.blur(BlurStyle.normal, isLatest ? 8 : 4);
+        canvas.drawCircle(points[i], dotRadius + 3, glowPaint);
+
+        // Solid dot
+        final dotPaint = Paint()
+          ..color = AppColors.heartColor
+          ..style = PaintingStyle.fill;
+        canvas.drawCircle(points[i], dotRadius, dotPaint);
+
+        // White center for latest
+        if (isLatest) {
+          final centerPaint = Paint()
+            ..color = Colors.white
+            ..style = PaintingStyle.fill;
+          canvas.drawCircle(points[i], 2.5, centerPaint);
+        }
+      }
+    } else {
+      // Kids mode: fun icons at each point
+      // We draw text emojis as the data point markers
+      for (int i = 0; i < points.length; i++) {
+        final isLatest = i == points.length - 1;
+        final bpm = readings[i].bpm;
+
+        // Choose fun icon — always happy & encouraging for kids!
+        String icon;
+        if (isLatest) {
+          icon = '💖'; // Latest reading = big heart
+        } else if (i % 3 == 0) {
+          icon = '⭐'; // Stars
+        } else if (i % 3 == 1) {
+          icon = '🌟'; // Sparkle stars
+        } else {
+          icon = '💗'; // Pink hearts
+        }
+
+        final textPainter = TextPainter(
+          text: TextSpan(
+            text: icon,
+            style: TextStyle(fontSize: isLatest ? 18 : 14),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+
+        textPainter.paint(
+          canvas,
+          Offset(
+            points[i].dx - textPainter.width / 2,
+            points[i].dy - textPainter.height / 2,
+          ),
+        );
+      }
+
+      // Sparkle connecting line for kids
+      if (points.length >= 2) {
+        final sparklePaint = Paint()
+          ..color = AppColors.kidsPrimary.withValues(alpha: 0.25)
+          ..strokeWidth = 2
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round;
+
+        final path = Path()..moveTo(points.first.dx, points.first.dy);
+        for (int i = 1; i < points.length; i++) {
+          path.lineTo(points[i].dx, points[i].dy);
+        }
+        canvas.drawPath(path, sparklePaint);
+      }
+    }
+  }
+
+  void _drawThresholdBands(Canvas canvas, Size size, double padding,
+      double graphHeight, double minBpm, double bpmRange) {
+    // Warning low line
+    _drawThresholdLine(canvas, size, padding, graphHeight, minBpm, bpmRange,
+        Thresholds.hrMin, AppColors.warning);
+    // Warning high line
+    _drawThresholdLine(canvas, size, padding, graphHeight, minBpm, bpmRange,
+        Thresholds.hrMax, AppColors.warning);
+    // Critical low line
+    _drawThresholdLine(canvas, size, padding, graphHeight, minBpm, bpmRange,
+        Thresholds.hrCriticalMin, AppColors.danger);
+    // Critical high line
+    _drawThresholdLine(canvas, size, padding, graphHeight, minBpm, bpmRange,
+        Thresholds.hrCriticalMax, AppColors.danger);
+  }
+
+  void _drawThresholdLine(Canvas canvas, Size size, double padding,
+      double graphHeight, double minBpm, double bpmRange, double threshold,
+      Color color) {
+    if (threshold < minBpm || threshold > minBpm + bpmRange) return;
+
+    final y = padding + (1 - (threshold - minBpm) / bpmRange) * graphHeight;
+    final paint = Paint()
+      ..color = color.withValues(alpha: 0.2)
+      ..strokeWidth = 1
+      ..style = PaintingStyle.stroke;
+
+    // Dashed line
+    const dashWidth = 4.0;
+    const dashSpace = 4.0;
+    double startX = 0;
+    while (startX < size.width) {
+      canvas.drawLine(
+        Offset(startX, y),
+        Offset(min(startX + dashWidth, size.width), y),
+        paint,
+      );
+      startX += dashWidth + dashSpace;
+    }
   }
 
   @override
-  bool shouldRepaint(covariant _HRWavePainter old) => true;
+  bool shouldRepaint(covariant _IntermittentTrendPainter old) => true;
 }
+
+

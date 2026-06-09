@@ -35,6 +35,7 @@ class DataParser {
   double _fsrPressure = 0;
   bool _irBlocked = false;
   double _heartRate = 0;
+  int _irRawValue = 0;
 
   final List<String> _rawLog = [];
   List<String> get rawLog => List.unmodifiable(_rawLog);
@@ -58,18 +59,21 @@ class DataParser {
 
     _log(line);
 
+    // Normalize pipe-separated format (Arduino sends: IR:145 | FSR:72% | BPM:78 | Rate:1.0)
+    final normalizedLine = line.contains('|') ? line.replaceAll('|', ',') : line;
+
     // Try CSV format first
-    if (line.contains(',')) {
-      final csvResult = _parseCsvLine(line);
+    if (normalizedLine.contains(',')) {
+      final csvResult = _parseCsvLine(normalizedLine);
       if (csvResult != null) return csvResult;
     }
 
     // Try key:value or key=value
-    final kvResult = _parseKeyValue(line);
+    final kvResult = _parseKeyValue(normalizedLine);
     if (kvResult != null) return kvResult;
 
     // Try single-char prefix
-    final prefixResult = _parseSingleCharPrefix(line);
+    final prefixResult = _parseSingleCharPrefix(normalizedLine);
     if (prefixResult != null) return prefixResult;
 
     _logParsed('❌ UNPARSED: "$line"');
@@ -270,7 +274,7 @@ class DataParser {
 
   _SensorField? _keywordToField(String key) {
     return switch (key) {
-      'F' || 'FL' || 'FLOW' || 'FLOWRATE' || 'FLOW_RATE' || 'FR' =>
+      'F' || 'FL' || 'FLOW' || 'FLOWRATE' || 'FLOW_RATE' || 'FR' || 'RATE' =>
         _SensorField.flow,
       'P' || 'FSR' || 'PRESSURE' || 'FORCE' || 'PRESS' =>
         _SensorField.fsr,
@@ -290,6 +294,7 @@ class DataParser {
       case _SensorField.fsr:
         _fsrPressure = value;
       case _SensorField.ir:
+        _irRawValue = value.toInt();
         _irBlocked = value >= 1;
       case _SensorField.heartRate:
         _heartRate = value;
@@ -311,6 +316,7 @@ class DataParser {
       fsrPressure: _fsrPressure,
       irBlocked: _irBlocked,
       heartRate: _heartRate,
+      irRawValue: _irRawValue,
     );
   }
 
@@ -319,6 +325,7 @@ class DataParser {
     _fsrPressure = 0;
     _irBlocked = false;
     _heartRate = 0;
+    _irRawValue = 0;
   }
 
   void clearLog() {

@@ -3,7 +3,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
 import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
 import 'package:just_audio/just_audio.dart';
@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/constants/thresholds.dart';
 import '../core/models/alarm_event.dart';
 import '../core/models/drug.dart';
+import '../core/models/hr_reading.dart';
 import '../core/models/infusion_session.dart';
 import '../core/models/sensor_data.dart';
 import '../core/utils/data_parser.dart';
@@ -24,6 +25,7 @@ import '../services/database_service.dart';
 import '../services/drug_library_service.dart';
 import '../services/notification_service.dart';
 import '../services/threshold_service.dart';
+import '../ui/screens/hr_scan_screen.dart';
 
 enum ConnectionMode { none, classicBluetooth, demo }
 
@@ -52,6 +54,37 @@ class PumpProvider extends ChangeNotifier {
   final List<double> _hrHistory = List.filled(100, 0.0);
   List<double> get hrHistory => List.unmodifiable(_hrHistory);
   int _hrHead = 0;
+
+  // --- Camera PPG HR Readings (intermittent trend) ---
+  final List<HrReading> _hrReadings = [];
+  List<HrReading> get hrReadings => List.unmodifiable(_hrReadings);
+  static const int _maxHrReadings = 200;
+
+  // --- HR Check Interval (global interruption) ---
+  Duration _hrCheckInterval = const Duration(minutes: 10);
+  Duration get hrCheckInterval => _hrCheckInterval;
+  Timer? _hrCheckTimer;
+  bool _hrScanActive = false;
+  bool get hrScanActive => _hrScanActive;
+
+  // Global navigator key for pushing HR scan from anywhere
+  GlobalKey<NavigatorState>? _navigatorKey;
+  set navigatorKey(GlobalKey<NavigatorState> key) => _navigatorKey = key;
+
+  // --- HR Check Interval Options ---
+  static const List<Duration> hrIntervalOptions = [
+    Duration(seconds: 5),
+    Duration(seconds: 10),
+    Duration(minutes: 10),
+    Duration(minutes: 30),
+    Duration(hours: 1),
+  ];
+
+  static String formatInterval(Duration d) {
+    if (d.inHours >= 1) return '${d.inHours} hour';
+    if (d.inMinutes >= 1) return '${d.inMinutes} mins';
+    return '${d.inSeconds} seconds';
+  }
 
   // --- Infusion Session ---
   InfusionSession? _session;
@@ -219,6 +252,11 @@ class PumpProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _isDarkMode = prefs.getBool('dark_mode') ?? true;
     _soundEnabled = prefs.getBool('sound_enabled') ?? true;
+    // Load HR check interval
+    final intervalMs = prefs.getInt('hr_check_interval_ms');
+    if (intervalMs != null) {
+      _hrCheckInterval = Duration(milliseconds: intervalMs);
+    }
     notifyListeners();
   }
 
@@ -226,6 +264,115 @@ class PumpProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('dark_mode', _isDarkMode);
     await prefs.setBool('sound_enabled', _soundEnabled);
+    await prefs.setInt('hr_check_interval_ms', _hrCheckInterval.inMilliseconds);
+  }
+
+  // ─── HR Check Interval & Global Interruption ─────────────────────────────
+
+  void setHrCheckInterval(Duration interval) {
+    _hrCheckInterval = interval;
+    savePrefs();
+    _restartHrCheckTimer();
+    notifyListeners();
+  }
+
+  void setHrScanActive(bool value) {
+    _hrScanActive = value;
+    notifyListeners();
+  }
+
+  void _restartHrCheckTimer() {
+    _hrCheckTimer?.cancel();
+    _hrCheckTimer = Timer.periodic(_hrCheckInterval, (_) {
+      triggerHrScan();
+    });
+  }
+
+  void startHrCheckTimer() {
+    _restartHrCheckTimer();
+  }
+
+  void stopHrCheckTimer() {
+    _hrCheckTimer?.cancel();
+  }
+
+  /// Trigger the HR scan screen globally, interrupting whatever the user is doing.
+  void triggerHrScan() {
+    if (_hrScanActive) return; // Already showing a scan
+    if (_navigatorKey?.currentState == null) return;
+
+    _hrScanActive = true;
+    notifyListeners();
+
+    _navigatorKey!.currentState!.push(
+      PageRouteBuilder(
+        opaque: true,
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            const HrScanScreen(isInterruption: true),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(
+            opacity: animation,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 0.1),
+                end: Offset.zero,
+              ).animate(CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOutCubic,
+              )),
+              child: child,
+            ),
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 400),
+      ),
+    );
+  }
+
+  /// Record a heart rate reading from camera PPG or fingerprint scan.
+  void recordHrReading(double bpm, HrSource source) {
+    final reading = HrReading(
+      bpm: bpm,
+      timestamp: DateTime.now(),
+      source: source,
+    );
+
+    _hrReadings.add(reading);
+    if (_hrReadings.length > _maxHrReadings) {
+      _hrReadings.removeAt(0);
+    }
+
+    // Also update the latest sensor data with the BPM
+    _latestData = SensorData(
+      flowRate: _latestData.flowRate,
+      fsrPressure: _latestData.fsrPressure,
+      irBlocked: _latestData.irBlocked,
+      heartRate: bpm,
+      irRawValue: _latestData.irRawValue,
+    );
+
+    // ── HR Out-of-Range Alarm: pause syringe if outside safe range ──
+    if (bpm > 0 && (bpm < Thresholds.safeHrMin || bpm > Thresholds.safeHrMax)) {
+      final isLow = bpm < Thresholds.safeHrMin;
+      _alarms.add(AlarmEvent(
+        parameter: isLow ? AlarmParameter.heartRateLow : AlarmParameter.heartRateHigh,
+        severity: AlarmSeverity.critical,
+        message: isLow
+            ? '🚨 HR TOO LOW: ${bpm.toStringAsFixed(0)} BPM (safe range: ${Thresholds.safeHrMin.toStringAsFixed(0)}-${Thresholds.safeHrMax.toStringAsFixed(0)})'
+            : '🚨 HR TOO HIGH: ${bpm.toStringAsFixed(0)} BPM (safe range: ${Thresholds.safeHrMin.toStringAsFixed(0)}-${Thresholds.safeHrMax.toStringAsFixed(0)})',
+      ));
+      if (_soundEnabled) _playAlarmSound(critical: true);
+      _notifService.showAlarm(
+        id: isLow ? 103 : 102,
+        title: '🚨 HR OUT OF RANGE',
+        body: 'Heart rate ${bpm.toStringAsFixed(0)} BPM is outside safe range. Syringe paused.',
+        isCritical: true,
+      );
+      // Auto-stop the syringe pump
+      sendStopCommand();
+    }
+
+    notifyListeners();
   }
 
   // ─── Classic Bluetooth ────────────────────────────────────────────────────
@@ -299,6 +446,7 @@ class PumpProvider extends ChangeNotifier {
     _connectedDeviceName = '';
     _connectionMode = ConnectionMode.none;
     _dataParser.reset();
+    stopHrCheckTimer();
     notifyListeners();
   }
 
@@ -315,7 +463,7 @@ class PumpProvider extends ChangeNotifier {
 
     // Auto-start a sample infusion so Kids Mode is immediately available
     if (_session == null) {
-      final demoDrug = Drug(
+      final demoDrug = const Drug(
         name: 'Normal Saline (Demo)',
         concentration: 1.0,
         concentrationUnit: 'mg/mL',
@@ -344,6 +492,10 @@ class PumpProvider extends ChangeNotifier {
       );
       _processData(data: data);
     });
+
+    // Start HR check timer in demo mode too (uses real camera)
+    startHrCheckTimer();
+
     notifyListeners();
   }
 
@@ -354,6 +506,7 @@ class PumpProvider extends ChangeNotifier {
     _connectedDeviceName = '';
     _connectionMode = ConnectionMode.none;
     _volumeTimer?.cancel();
+    stopHrCheckTimer();
     notifyListeners();
   }
 
@@ -434,6 +587,8 @@ class PumpProvider extends ChangeNotifier {
           body: '${_session!.drug.name} infusion finished. ${_session!.volumeDelivered.toStringAsFixed(1)} mL delivered.',
           isCritical: true,
         );
+        // Auto-stop syringe pump on infusion complete
+        sendStopCommand();
       }
     }
     _lastVolumeUpdate = now;
@@ -453,6 +608,15 @@ class PumpProvider extends ChangeNotifier {
 
   // ─── Data Pipeline ────────────────────────────────────────────────────────
 
+  // ─── IR Alarm State (string-triggered only) ─────────────────────────────
+  bool _fluidEmptyAlarmActive = false;
+  bool get fluidEmptyAlarmActive => _fluidEmptyAlarmActive;
+
+  void clearFluidEmptyAlarm() {
+    _fluidEmptyAlarmActive = false;
+    notifyListeners();
+  }
+
   static final _garbagePattern = RegExp(
     r'^(Failed|Error|nan|inf|---)',
     caseSensitive: false,
@@ -461,6 +625,31 @@ class PumpProvider extends ChangeNotifier {
   void _onRawLine(String raw) {
     final line = raw.trim();
     if (line.isEmpty || _garbagePattern.hasMatch(line)) return;
+
+    // ── Exact-match Arduino Empty Alarm ─────────────────────────────────
+    // The app ONLY fires the Empty Alarm when it receives this exact string.
+    // It NEVER sends a stop command ('s') as a result of this alarm.
+    if (line == 'ALARM: EMPTY FLUID!') {
+      _fluidEmptyAlarmActive = true;
+      final alarm = AlarmEvent(
+        parameter: AlarmParameter.syringeEmpty,
+        severity: AlarmSeverity.critical,
+        message: '🚨 FLUID EMPTY! Arduino reported: ALARM: EMPTY FLUID!',
+      );
+      if (!_alarms.any((a) => a.parameter == AlarmParameter.syringeEmpty)) {
+        _alarms = [..._alarms, alarm];
+      }
+      if (_soundEnabled) _playAlarmSound(critical: true);
+      _notifService.showAlarm(
+        id: 106,
+        title: '🚨 FLUID EMPTY!',
+        body: 'The syringe fluid is empty. Please replace the syringe.',
+        isCritical: true,
+      );
+      // ⚠ DO NOT send stop command here. Motor control is manual only.
+      notifyListeners();
+      return;
+    }
 
     // Accept lines starting with known prefixes
     if (!RegExp(r'^[FPIHR]').hasMatch(line) && !line.contains(',')) {
@@ -493,6 +682,16 @@ class PumpProvider extends ChangeNotifier {
       desiredFlowRate: _session?.desiredFlowRate,
     );
     _alarms = newAlarms;
+
+    // ── Auto-Stop: ONLY on confirmed critical occlusion ──
+    // Syringe-empty auto-stop is intentionally removed.
+    // Empty alarm fires only from the "ALARM: EMPTY FLUID!" string.
+    // Motor stop on empty is performed MANUALLY by the nurse/operator.
+    final hasCriticalOcclusion = newAlarms.any((a) =>
+        a.parameter == AlarmParameter.occlusion && a.isCritical);
+    if (hasCriticalOcclusion) {
+      sendStopCommand();
+    }
 
     // Spam control
     final currentAlarmParams = newAlarms.map((a) => a.parameter).toSet();
@@ -557,6 +756,51 @@ class PumpProvider extends ChangeNotifier {
     } catch (_) {}
   }
 
+  // ─── Bluetooth Commands ───────────────────────────────────────────────────
+
+  /// Stop the motor. Sends exact command 's'.
+  /// Only called from: manual Stop button, or confirmed critical HR alarm.
+  void sendStopCommand() {
+    if (_connectionMode == ConnectionMode.classicBluetooth && _isConnected) {
+      _btService.sendCommand('s');
+    }
+  }
+
+  /// Start motor forward. Sends exact command 'f'.
+  void sendMotorForward() {
+    if (_connectionMode == ConnectionMode.classicBluetooth && _isConnected) {
+      _btService.sendCommand('f');
+    }
+  }
+
+  /// Start motor backward. Sends exact command 'b'.
+  void sendMotorBackward() {
+    if (_connectionMode == ConnectionMode.classicBluetooth && _isConnected) {
+      _btService.sendCommand('b');
+    }
+  }
+
+  /// Set flow rate. Sends exact command 'R <value>'.
+  void sendSetRate(double value) {
+    if (_connectionMode == ConnectionMode.classicBluetooth && _isConnected) {
+      _btService.sendCommand('R $value');
+    }
+  }
+
+  /// Start infusion with volume. Sends exact command 'I <value>'.
+  void sendStartInfusionVolume(double value) {
+    if (_connectionMode == ConnectionMode.classicBluetooth && _isConnected) {
+      _btService.sendCommand('I $value');
+    }
+  }
+
+  /// Send a raw command string to Arduino via Bluetooth.
+  void sendCommand(String command) {
+    if (_connectionMode == ConnectionMode.classicBluetooth && _isConnected) {
+      _btService.sendCommand(command);
+    }
+  }
+
   // ─── Settings ─────────────────────────────────────────────────────────────
 
   void setDarkMode(bool value) {
@@ -589,6 +833,7 @@ class PumpProvider extends ChangeNotifier {
     _uiThrottleTimer?.cancel();
     _notifCheckTimer?.cancel();
     _dbThrottleTimer?.cancel();
+    _hrCheckTimer?.cancel();
     _dataSubscription?.cancel();
     _discoverySubscription?.cancel();
     _audioPlayer.dispose();

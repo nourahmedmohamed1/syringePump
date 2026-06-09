@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/constants/app_colors.dart';
 
-/// Visual status indicator that replaces raw FSR/IR numbers.
-/// Answers one question: "Is there a problem or not?"
+/// Visual status indicator for FSR pressure/occlusion.
+/// IR syringe-empty is handled by the hardware alarm string, not shown here.
 class SystemStatusBanner extends StatefulWidget {
   final bool fsrWarning;
   final bool fsrCritical;

@@ -15,6 +15,7 @@
 ### 🩺 Clinical Mode (For Healthcare Professionals)
 *   **Bluetooth Connectivity**: Seamless integration with the syringe pump hardware (using `flutter_bluetooth_serial`).
 *   **Real-time Monitoring**: Live tracking of the infusion progress, volume delivered, and flow rate.
+*   **Heart Rate Monitor (PPG)**: Built-in front-facing camera Photoplethysmography (PPG) to measure patient heart rate without external hardware.
 *   **Parameter Control**: Easy-to-use interface for adjusting critical medical parameters safely.
 *   **Demo Mode**: Fully functional simulation mode for training and demonstration without requiring physical hardware.
 

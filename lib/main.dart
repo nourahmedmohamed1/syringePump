@@ -9,6 +9,10 @@ import 'core/constants/app_colors.dart';
 import 'providers/pump_provider.dart';
 import 'ui/screens/splash_screen.dart';
 
+/// Global navigator key — used by PumpProvider to push HR scan
+/// screen from anywhere in the app (even deep inside Kids Mode).
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setPreferredOrientations(
@@ -21,6 +25,7 @@ void main() async {
     Permission.bluetoothConnect,
     Permission.location,
     Permission.notification,
+    Permission.camera,
   ].request();
 
   runApp(
@@ -38,7 +43,12 @@ class SmartPumpApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final provider = context.watch<PumpProvider>();
 
+    // Inject the global navigator key into the provider
+    // so HR check timer can push routes from anywhere.
+    provider.navigatorKey = navigatorKey;
+
     return MaterialApp(
+      navigatorKey: navigatorKey,
       title: 'EleCare',
       debugShowCheckedModeBanner: false,
       themeMode: provider.isDarkMode ? ThemeMode.dark : ThemeMode.light,

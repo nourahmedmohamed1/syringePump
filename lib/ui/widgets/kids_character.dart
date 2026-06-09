@@ -5,18 +5,26 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../../core/constants/app_colors.dart';
+import '../../core/models/hr_reading.dart';
 import 'elephant_painter.dart';
+import 'heart_rate_wave.dart';
 
 class KidsCharacter extends StatefulWidget {
   final double progress;
   final double flowRatio;
   final VoidCallback onClose;
+  final List<HrReading> hrReadings;
+  final double latestBpm;
+  final bool isIdle;
 
   const KidsCharacter({
     super.key,
     required this.progress,
     required this.flowRatio,
     required this.onClose,
+    this.hrReadings = const [],
+    this.latestBpm = 72,
+    this.isIdle = false,
   });
 
   @override
@@ -46,12 +54,20 @@ class _KidsCharacterState extends State<KidsCharacter>
   String _ellieReply = '';
   int _speechIndex = 0;
 
-  // Game state
+  // Game 3 state (Catch the Drops)
   List<_FallingDrop> _drops = [];
   int _gameScore = 0;
   int _gameLives = 3;
   bool _gameActive = false;
   late AnimationController _gameTickController;
+
+  // Game 4 state (Memory Match)
+  List<_MemoryCard> _memCards = [];
+  int? _firstFlipIdx;
+  bool _memLocked = false;
+  int _memMatches = 0;
+  bool _memGameOver = false;
+  int _memMoves = 0;
 
   // Messages (English + Arabic)
   static const _messagesEn = [
@@ -85,8 +101,10 @@ class _KidsCharacterState extends State<KidsCharacter>
   @override
   void initState() {
     super.initState();
+    // Sync bounce with heartbeat BPM
+    final beatMs = _bpmToMs(widget.latestBpm);
     _bounceController = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 1200))
+        vsync: this, duration: Duration(milliseconds: beatMs))
       ..repeat(reverse: true);
     _earController = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 1800))
@@ -108,6 +126,25 @@ class _KidsCharacterState extends State<KidsCharacter>
       ..addListener(_gameTick);
     _initTts();
     _startSpeechCycle();
+  }
+
+  /// Convert BPM to milliseconds per beat for animation sync.
+  int _bpmToMs(double bpm) {
+    if (bpm <= 0 || bpm > 300) return 833; // fallback ~72 BPM
+    return (60000 / bpm).round().clamp(200, 3000);
+  }
+
+  @override
+  void didUpdateWidget(KidsCharacter oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Dynamically sync bounce animation to latest BPM
+    if ((oldWidget.latestBpm - widget.latestBpm).abs() > 3) {
+      final newMs = _bpmToMs(widget.latestBpm);
+      _bounceController.duration = Duration(milliseconds: newMs);
+      if (!_bounceController.isAnimating) {
+        _bounceController.repeat(reverse: true);
+      }
+    }
   }
 
   Future<void> _initTts() async {
@@ -229,17 +266,41 @@ class _KidsCharacterState extends State<KidsCharacter>
               // ── Language toggle + Page tabs ──
               _buildTabBar(),
               const SizedBox(height: 8),
-              // ── Main content ──
+              // ── Main content + bottom sections ──
               Expanded(
-                child: _currentPage == 0
-                    ? _buildEllieSpeaksPage(isCelebrating)
-                    : _currentPage == 1
-                        ? _buildTalkToElliePage(isCelebrating)
-                        : _buildGamePage(),
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Column(
+                    children: [
+                      // Page content
+                      SizedBox(
+                        height: MediaQuery.of(context).size.height * 0.45,
+                        child: _currentPage == 0
+                            ? _buildEllieSpeaksPage(isCelebrating)
+                            : _currentPage == 1
+                                ? _buildTalkToElliePage(isCelebrating)
+                                : _currentPage == 2
+                                    ? _buildGamePage()
+                                    : _buildMemoryMatchPage(),
+                      ),
+                      // ── Syringe progress ──
+                      if (_currentPage < 2) _buildProgressSection(),
+                      // ── Fun HR graph (kids style) ──
+                      if (_currentPage < 2 && widget.hrReadings.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: HeartRateWave(
+                            buffer: const [],
+                            currentHR: widget.latestBpm,
+                            hrReadings: widget.hrReadings,
+                            kidsMode: true,
+                          ),
+                        ),
+                      const SizedBox(height: 16),
+                    ],
+                  ),
+                ),
               ),
-              // ── Syringe progress (always visible) ──
-              if (_currentPage != 2) _buildProgressSection(),
-              const SizedBox(height: 16),
             ],
           ),
         ),
@@ -310,7 +371,7 @@ class _KidsCharacterState extends State<KidsCharacter>
   // ═══════════════════════════════════════════
   Widget _buildTabBar() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Container(
         height: 42,
         decoration: BoxDecoration(
@@ -322,17 +383,22 @@ class _KidsCharacterState extends State<KidsCharacter>
             _tabButton(
               index: 0,
               icon: Icons.record_voice_over,
-              label: _isArabic ? 'إيلي تتكلم' : 'Ellie Speaks',
+              label: _isArabic ? 'إيلي' : 'Ellie',
             ),
             _tabButton(
               index: 1,
               icon: Icons.mic,
-              label: _isArabic ? 'كلّم إيلي' : 'Talk to Ellie',
+              label: _isArabic ? 'كلّم' : 'Talk',
             ),
             _tabButton(
               index: 2,
-              icon: Icons.videogame_asset_rounded,
-              label: _isArabic ? 'لعبة' : 'Game',
+              icon: Icons.catching_pokemon_rounded,
+              label: _isArabic ? 'صيد' : 'Catch',
+            ),
+            _tabButton(
+              index: 3,
+              icon: Icons.grid_view_rounded,
+              label: _isArabic ? 'ذاكرة' : 'Memory',
             ),
           ],
         ),
@@ -604,6 +670,7 @@ class _KidsCharacterState extends State<KidsCharacter>
   //  SHARED: Progress section (bottom)
   // ═══════════════════════════════════════════
   Widget _buildProgressSection() {
+    final isIdle = widget.isIdle;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 32),
       child: Column(
@@ -620,25 +687,45 @@ class _KidsCharacterState extends State<KidsCharacter>
               borderRadius: BorderRadius.circular(14),
               child: Stack(
                 children: [
-                  FractionallySizedBox(
-                    widthFactor: widget.progress.clamp(0, 1),
-                    child: Container(
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(colors: [
-                          AppColors.kidsPrimary,
-                          AppColors.kidsAccent,
-                          AppColors.kidsGreen,
-                        ]),
+                  if (isIdle)
+                    // Animated shimmer for idle state
+                    AnimatedBuilder(
+                      animation: _starController,
+                      builder: (_, __) => FractionallySizedBox(
+                        widthFactor:
+                            0.15 + (_starController.value * 0.05),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(colors: [
+                              AppColors.kidsSky.withValues(alpha: 0.4),
+                              AppColors.kidsPrimary.withValues(alpha: 0.2),
+                            ]),
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    FractionallySizedBox(
+                      widthFactor: widget.progress.clamp(0, 1),
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(colors: [
+                            AppColors.kidsPrimary,
+                            AppColors.kidsAccent,
+                            AppColors.kidsGreen,
+                          ]),
+                        ),
                       ),
                     ),
-                  ),
                   Center(
                     child: Text(
-                      '${(widget.progress * 100).toStringAsFixed(0)}%',
+                      isIdle
+                          ? (_isArabic ? 'في انتظار الحقنة...' : 'Waiting for infusion...')
+                          : '${(widget.progress * 100).toStringAsFixed(0)}%',
                       style: GoogleFonts.outfit(
                         color: Colors.white,
                         fontWeight: FontWeight.w800,
-                        fontSize: 12,
+                        fontSize: 11,
                       ),
                     ),
                   ),
@@ -647,63 +734,77 @@ class _KidsCharacterState extends State<KidsCharacter>
             ),
           ),
           const SizedBox(height: 8),
-          // Star milestones
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [0.25, 0.5, 0.75, 1.0].map((m) {
-              final achieved = widget.progress >= m;
-              return Column(
-                children: [
-                  AnimatedBuilder(
-                    animation: _starController,
-                    builder: (_, __) => Transform.scale(
-                      scale: achieved
-                          ? 1.0 + _starController.value * 0.15
-                          : 0.8,
-                      child: Text(
-                        achieved ? '⭐' : '☆',
-                        style: TextStyle(
-                          fontSize: 18,
-                          color: achieved
-                              ? null
-                              : Colors.white.withValues(alpha: 0.3),
+          if (!isIdle) ...[
+            // Star milestones
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [0.25, 0.5, 0.75, 1.0].map((m) {
+                final achieved = widget.progress >= m;
+                return Column(
+                  children: [
+                    AnimatedBuilder(
+                      animation: _starController,
+                      builder: (_, __) => Transform.scale(
+                        scale: achieved
+                            ? 1.0 + _starController.value * 0.15
+                            : 0.8,
+                        child: Text(
+                          achieved ? '⭐' : '☆',
+                          style: TextStyle(
+                            fontSize: 18,
+                            color: achieved
+                                ? null
+                                : Colors.white.withValues(alpha: 0.3),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  Text(
-                    '${(m * 100).toInt()}%',
-                    style: GoogleFonts.outfit(
-                      color: achieved
-                          ? AppColors.kidsPrimary
-                          : Colors.white.withValues(alpha: 0.3),
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
+                    Text(
+                      '${(m * 100).toInt()}%',
+                      style: GoogleFonts.outfit(
+                        color: achieved
+                            ? AppColors.kidsPrimary
+                            : Colors.white.withValues(alpha: 0.3),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
-                ],
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 12),
-          // Big number
-          Text(
-            '${(widget.progress * 100).toStringAsFixed(0)}%',
-            style: GoogleFonts.outfit(
-              color: AppColors.kidsGreen,
-              fontWeight: FontWeight.w900,
-              fontSize: 44,
-              letterSpacing: -2,
+                  ],
+                );
+              }).toList(),
             ),
-          ),
-          Text(
-            _isArabic ? 'تم توصيل الدواء' : 'medicine delivered',
-            style: GoogleFonts.outfit(
-              color: Colors.white.withValues(alpha: 0.6),
-              fontWeight: FontWeight.w500,
-              fontSize: 13,
+            const SizedBox(height: 12),
+            Text(
+              '${(widget.progress * 100).toStringAsFixed(0)}%',
+              style: GoogleFonts.outfit(
+                color: AppColors.kidsGreen,
+                fontWeight: FontWeight.w900,
+                fontSize: 44,
+                letterSpacing: -2,
+              ),
             ),
-          ),
+            Text(
+              _isArabic ? 'تم توصيل الدواء' : 'medicine delivered',
+              style: GoogleFonts.outfit(
+                color: Colors.white.withValues(alpha: 0.6),
+                fontWeight: FontWeight.w500,
+                fontSize: 13,
+              ),
+            ),
+          ] else ...[
+            const SizedBox(height: 8),
+            Text(
+              _isArabic
+                  ? 'إيلي جاهزة! العب أو تكلم معها 🐘'
+                  : "Ellie is ready! Play or chat while you wait 🐘",
+              style: GoogleFonts.outfit(
+                color: AppColors.kidsSky.withValues(alpha: 0.9),
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
         ],
       ),
     );
@@ -833,14 +934,14 @@ class _KidsCharacterState extends State<KidsCharacter>
       Positioned(top: 8, left: 16, right: 16, child: Row(children: [
         Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
-            gradient: LinearGradient(colors: [AppColors.kidsGreen.withValues(alpha: 0.25), AppColors.kidsGreen.withValues(alpha: 0.1)]),
-            borderRadius: BorderRadius.circular(20), border: Border.all(color: AppColors.kidsGreen.withValues(alpha: 0.3))),
+            gradient: LinearGradient(colors: [AppColors.kidsSky.withValues(alpha: 0.25), AppColors.kidsSky.withValues(alpha: 0.1)]),
+            borderRadius: BorderRadius.circular(20), border: Border.all(color: AppColors.kidsSky.withValues(alpha: 0.4))),
           child: Row(children: [const Text('💧', style: TextStyle(fontSize: 18)), const SizedBox(width: 6),
-            Text('$_gameScore', style: GoogleFonts.outfit(color: AppColors.kidsGreen, fontWeight: FontWeight.w900, fontSize: 22))])),
+            Text('$_gameScore', style: GoogleFonts.outfit(color: AppColors.kidsSky, fontWeight: FontWeight.w900, fontSize: 22))])),
         const Spacer(),
         Row(children: List.generate(5, (i) => Padding(padding: const EdgeInsets.only(left: 3),
           child: AnimatedScale(scale: i < _gameLives ? 1.0 : 0.7, duration: const Duration(milliseconds: 300),
-            child: Text(i < _gameLives ? '❤️' : '🤍', style: const TextStyle(fontSize: 18)))))),
+            child: Text(i < _gameLives ? '❤️' : '🩶', style: const TextStyle(fontSize: 18)))))),
       ])),
       Positioned(bottom: 8, left: 0, right: 0, child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
         const Text('🧪', style: TextStyle(fontSize: 22)), const SizedBox(width: 8),
@@ -871,6 +972,309 @@ class _KidsCharacterState extends State<KidsCharacter>
       Text(label, style: GoogleFonts.outfit(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.w600)),
     ]);
   }
+
+  // ═══════════════════════════════════════════
+  //  GAME 4: MEMORY MATCH
+  // ═══════════════════════════════════════════
+
+  static const _memEmojis = ['🐘', '🦋', '🌈', '🌟', '💧', '🎈'];
+
+  void _initMemoryGame() {
+    final pairs = [..._memEmojis, ..._memEmojis]..shuffle();
+    _memCards = List.generate(
+      pairs.length,
+      (i) => _MemoryCard(emoji: pairs[i]),
+    );
+    _firstFlipIdx = null;
+    _memLocked = false;
+    _memMatches = 0;
+    _memGameOver = false;
+    _memMoves = 0;
+  }
+
+  void _onMemCardTap(int idx) {
+    if (_memLocked) return;
+    final card = _memCards[idx];
+    if (card.isMatched || card.isFaceUp) return;
+
+    setState(() {
+      _memCards[idx] = card.copyWith(isFaceUp: true);
+    });
+
+    if (_firstFlipIdx == null) {
+      _firstFlipIdx = idx;
+      return;
+    }
+
+    final firstIdx = _firstFlipIdx!;
+    _firstFlipIdx = null;
+    _memMoves++;
+    _memLocked = true;
+
+    if (_memCards[firstIdx].emoji == _memCards[idx].emoji) {
+      // Match!
+      Future.delayed(const Duration(milliseconds: 350), () {
+        if (!mounted) return;
+        setState(() {
+          _memCards[firstIdx] = _memCards[firstIdx].copyWith(isMatched: true);
+          _memCards[idx] = _memCards[idx].copyWith(isMatched: true);
+          _memMatches++;
+          _memLocked = false;
+        });
+        final rng = Random();
+        final cheers = _isArabic
+            ? ['مطابقة! 🌟', 'رائع!', 'ممتاز!']
+            : ['Match! 🌟', 'Amazing!', 'Great find!'];
+        _ellieSpeak(cheers[rng.nextInt(cheers.length)]);
+        if (_memMatches == _memEmojis.length) {
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted) {
+              setState(() => _memGameOver = true);
+              _ellieSpeak(_isArabic ? 'أحسنت! فزت!' : 'You won! Amazing!');
+            }
+          });
+        }
+      });
+    } else {
+      // No match — flip back
+      Future.delayed(const Duration(milliseconds: 900), () {
+        if (!mounted) return;
+        setState(() {
+          _memCards[firstIdx] = _memCards[firstIdx].copyWith(isFaceUp: false);
+          _memCards[idx] = _memCards[idx].copyWith(isFaceUp: false);
+          _memLocked = false;
+        });
+      });
+    }
+  }
+
+  Widget _buildMemoryMatchPage() {
+    if (_memCards.isEmpty || _memGameOver) {
+      final won = _memGameOver;
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(won ? '🏆' : '🧠', style: const TextStyle(fontSize: 64)),
+              const SizedBox(height: 10),
+              Text(
+                won
+                    ? (_isArabic ? 'فزت يا بطل! 🎉' : 'You Won! 🎉')
+                    : (_isArabic ? 'طابق الصور!' : 'Match the pictures!'),
+                style: GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 26),
+                textAlign: TextAlign.center,
+              ),
+              if (won) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 20, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.kidsPink.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                        color: AppColors.kidsPink.withValues(alpha: 0.5)),
+                  ),
+                  child: Text(
+                    _isArabic
+                        ? '🌟 $_memMoves حركة فقط! 🌟'
+                        : '🌟 $_memMoves moves! 🌟',
+                    style: GoogleFonts.outfit(
+                        color: AppColors.kidsPink,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16),
+                  ),
+                ),
+              ] else ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(
+                    _isArabic
+                        ? 'اضغط على بطاقتين متشابهتين\nلتطابقهما وتفوز!'
+                        : 'Flip two matching cards\nto find all 6 pairs!',
+                    style: GoogleFonts.outfit(
+                        color: Colors.white70,
+                        fontSize: 13,
+                        height: 1.5),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 24),
+              GestureDetector(
+                onTap: () => setState(() => _initMemoryGame()),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 36, vertical: 16),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                        colors: [AppColors.kidsPink, AppColors.kidsAccent]),
+                    borderRadius: BorderRadius.circular(30),
+                    boxShadow: [
+                      BoxShadow(
+                          color: AppColors.kidsPink.withValues(alpha: 0.4),
+                          blurRadius: 18,
+                          offset: const Offset(0, 5))
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('▶', style: TextStyle(fontSize: 18, color: Colors.white)),
+                      const SizedBox(width: 8),
+                      Text(
+                        won
+                            ? (_isArabic ? 'مرة ثانية!' : 'Play Again!')
+                            : (_isArabic ? 'ابدأ اللعبة!' : "Let's Play!"),
+                        style: GoogleFonts.outfit(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 17),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        // Stats bar
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _memStat('🧩', _isArabic ? 'تطابقات' : 'Matches',
+                  '$_memMatches / ${_memEmojis.length}', AppColors.kidsGreen),
+              _memStat('👆', _isArabic ? 'حركات' : 'Moves',
+                  '$_memMoves', AppColors.kidsSky),
+            ],
+          ),
+        ),
+        // Card grid 4 columns × 3 rows
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: GridView.builder(
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate:
+                  const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 4,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                childAspectRatio: 0.85,
+              ),
+              itemCount: _memCards.length,
+              itemBuilder: (_, i) => _buildMemCard(i),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMemCard(int idx) {
+    final card = _memCards[idx];
+    final faceUp = card.isFaceUp || card.isMatched;
+    return GestureDetector(
+      onTap: () => _onMemCardTap(idx),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        decoration: BoxDecoration(
+          gradient: faceUp
+              ? (card.isMatched
+                  ? LinearGradient(colors: [
+                      AppColors.kidsGreen.withValues(alpha: 0.3),
+                      AppColors.kidsSky.withValues(alpha: 0.2),
+                    ])
+                  : LinearGradient(colors: [
+                      AppColors.kidsPrimary.withValues(alpha: 0.25),
+                      AppColors.kidsPink.withValues(alpha: 0.15),
+                    ]))
+              : LinearGradient(colors: [
+                  const Color(0xFF3D2C8D).withValues(alpha: 0.8),
+                  const Color(0xFF5C3D99).withValues(alpha: 0.6),
+                ]),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: faceUp
+                ? (card.isMatched
+                    ? AppColors.kidsGreen.withValues(alpha: 0.6)
+                    : AppColors.kidsPrimary.withValues(alpha: 0.5))
+                : Colors.white.withValues(alpha: 0.15),
+            width: card.isMatched ? 2 : 1,
+          ),
+          boxShadow: card.isMatched
+              ? [
+                  BoxShadow(
+                      color: AppColors.kidsGreen.withValues(alpha: 0.3),
+                      blurRadius: 10)
+                ]
+              : [],
+        ),
+        child: Center(
+          child: faceUp
+              ? Text(card.emoji,
+                  style: TextStyle(
+                      fontSize: card.isMatched ? 28 : 26))
+              : Text('🌙',
+                  style: TextStyle(
+                      fontSize: 22,
+                      color: Colors.white.withValues(alpha: 0.4))),
+        ),
+      ),
+    );
+  }
+
+  Widget _memStat(
+      String icon, String label, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(icon, style: const TextStyle(fontSize: 14)),
+          const SizedBox(width: 6),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(label,
+                  style: GoogleFonts.outfit(
+                      color: color.withValues(alpha: 0.8),
+                      fontSize: 9,
+                      fontWeight: FontWeight.w600)),
+              Text(value,
+                  style: GoogleFonts.outfit(
+                      color: color,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _FallingDrop {
@@ -884,6 +1288,30 @@ class _Sparkle {
   int life;
   String emoji;
   _Sparkle({required this.x, required this.y, required this.dx, required this.dy, required this.life, required this.emoji});
+}
+
+class _MemoryCard {
+  final String emoji;
+  final bool isFaceUp;
+  final bool isMatched;
+
+  const _MemoryCard({
+    required this.emoji,
+    this.isFaceUp = false,
+    this.isMatched = false,
+  });
+
+  _MemoryCard copyWith({
+    String? emoji,
+    bool? isFaceUp,
+    bool? isMatched,
+  }) {
+    return _MemoryCard(
+      emoji: emoji ?? this.emoji,
+      isFaceUp: isFaceUp ?? this.isFaceUp,
+      isMatched: isMatched ?? this.isMatched,
+    );
+  }
 }
 
 class _BubbleTailPainter extends CustomPainter {

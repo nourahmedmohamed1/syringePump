@@ -5,6 +5,7 @@ class SensorData {
   final double fsrPressure;  // FSR: 0-1023 analog value
   final bool irBlocked;      // IR: true = syringe empty / plunger at end
   final double heartRate;    // Pulse Sensor: BPM
+  final int irRawValue;      // IR: raw analog value 0-1024 (for calibration)
   final DateTime timestamp;
 
   SensorData({
@@ -12,6 +13,7 @@ class SensorData {
     required this.fsrPressure,
     required this.irBlocked,
     required this.heartRate,
+    this.irRawValue = 0,
     DateTime? timestamp,
   }) : timestamp = timestamp ?? DateTime.now();
 
@@ -21,6 +23,7 @@ class SensorData {
         fsrPressure: 120,
         irBlocked: false,
         heartRate: 78,
+        irRawValue: 500,
       );
 
   /// Empty (initial) state
@@ -29,6 +32,7 @@ class SensorData {
         fsrPressure: 0,
         irBlocked: false,
         heartRate: 0,
+        irRawValue: 0,
       );
 
   Map<String, dynamic> toMap() => {
@@ -36,6 +40,7 @@ class SensorData {
         'fsr_pressure': fsrPressure,
         'ir_blocked': irBlocked ? 1 : 0,
         'heart_rate': heartRate,
+        'ir_raw_value': irRawValue,
         'timestamp': timestamp.millisecondsSinceEpoch,
       };
 
@@ -44,6 +49,7 @@ class SensorData {
         fsrPressure: (map['fsr_pressure'] as num).toDouble(),
         irBlocked: map['ir_blocked'] == 1,
         heartRate: (map['heart_rate'] as num).toDouble(),
+        irRawValue: (map['ir_raw_value'] as num?)?.toInt() ?? 0,
         timestamp:
             DateTime.fromMillisecondsSinceEpoch(map['timestamp'] as int),
       );
