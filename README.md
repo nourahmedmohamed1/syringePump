@@ -27,17 +27,17 @@
 - [🌐 Bilingual & Accessibility](#-bilingual--accessibility)
 - [🚀 Getting Started](#-getting-started)
 - [📂 Project Structure](#-project-structure)
-
----
-
 ## 🌟 Overview
 
 **EleCare** is an advanced, dual-mode Flutter application engineered to interface natively with custom Smart Syringe Pump hardware via Bluetooth. 
 
 Built with both the **healthcare professional** and the **pediatric patient** in mind, it provides robust, real-time medical monitoring capabilities while completely reimagining the pediatric hospital experience through immersive distraction therapy features.
 
----
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/76f16db4-820a-4ca5-bdf2-c7d0eeae37f8" width="300" alt="EleCare Setup" />
+</p>
 
+---
 ## ✨ Key Features
 
 ### 🩺 Clinical Mode
@@ -67,13 +67,10 @@ A dedicated, magical interface designed specifically to reduce treatment anxiety
 
 ## 📸 Screenshots
 
-*(Replace the placeholder links with actual images of the app once hosted!)*
-
-| Clinical Dashboard | Camera HR Scanner (PPG) | Kids Interaction Mode | "Catch the Drops" Game |
+| Clinical Dashboard | Camera HR Scanner (PPG) | Kids Interaction Mode | Memory Game |
 | :---: | :---: | :---: | :---: |
-| <img src="https://via.placeholder.com/200x400/E3F2FD/02569B?text=Dashboard" alt="Dashboard" width="200"/> | <img src="https://via.placeholder.com/200x400/FFEBEE/C62828?text=HR+Scanner" alt="HR Scanner" width="200"/> | <img src="https://via.placeholder.com/200x400/FFF8E1/FF8F00?text=Ellie" alt="Kids Mode" width="200"/> | <img src="https://via.placeholder.com/200x400/E8F5E9/2E7D32?text=Mini-Game" alt="Game" width="200"/> |
+| <img src="https://github.com/user-attachments/assets/b6b0a51f-f0e6-4fdb-9506-6a029229cc87" width="200" alt="Clinical Dashboard" /> | <img src="https://github.com/user-attachments/assets/168b453f-abf7-488b-a977-3b42db11bec0" width="200" alt="Camera HR Scanner" /> | <img src="https://github.com/user-attachments/assets/44964a99-7e71-4a8d-ae1f-de4dc99ae575" width="200" alt="Kids Interaction Mode" /> | <img src="https://github.com/user-attachments/assets/5173e2d8-9ee5-4dac-bf9a-69be89c43491" width="200" alt="Memory Game" /> |
 
-> **Pro Tip:** You can capture screenshots directly from your android device and upload them to the repository, then replace these Markdown placeholder URLs!
 
 ---
 
@@ -158,6 +155,34 @@ lib/
 
 ---
 
+---
+## 📧 Contact
+**Project Contributer**: Habiba Ahmed
+- Email: 
+- [GitHub]()
+- [LinkedIn]()
+
+**Project Contributer**: Nour Ahmed
+- [GitHub](https://github.com/nourahmedmohamed1)
+- [LinkedIn](https://linkedin.com/in/nn-anwar)
+
+**Project Contributer**: ......
+- Email: 
+- [GitHub]()
+- [LinkedIn]()
+
+**Project Contributer**:........
+- [GitHub]()
+- [LinkedIn]()
+**Project Contributer**: ......
+- Email: 
+- [GitHub]()
+- [LinkedIn]()
+
+
+---
+
 <div align="center">
-  <b>Built with ❤️ to revolutionize pediatric patient care.</b>
+
+
 </div>
